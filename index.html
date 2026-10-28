@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수요일 시험 · 도서관 대출</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --text:#1c1c1e; --sub:#6b6b70; --line:#dcdde1;
+          --ok:#1f9d55; --okbg:#e6f6ec; --ng:#d62d20; --ngbg:#fdeaea; --accent:#2f6fde; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111214; --card:#1c1d20; --text:#f2f2f4; --sub:#a0a0a6; --line:#34353a;
+            --okbg:#123322; --ngbg:#3a1614; --accent:#5b8ff0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:16px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:16px; }
+  h1 { font-size:22px; margin:8px 0 4px; }
+  .sub { color:var(--sub); font-size:14px; margin:0 0 16px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  h2 { font-size:17px; margin:0 0 12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:10px; }
+  label { display:flex; flex-direction:column; font-size:13px; color:var(--sub); gap:4px; }
+  input, button { font:inherit; padding:10px; border-radius:8px; border:1px solid var(--line);
+                  background:var(--bg); color:var(--text); min-height:44px; width:100%; }
+  button { background:var(--accent); color:#fff; border:none; font-weight:600; margin-top:12px; cursor:pointer; grid-column:1/-1; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .result { margin-top:12px; padding:14px; border-radius:10px; font-size:26px; font-weight:800; text-align:center; }
+  .result:empty { display:none; }
+  .result.ok { background:var(--okbg); color:var(--ok); }
+  .result.ng { background:var(--ngbg); color:var(--ng); }
+  .result small { display:block; font-size:14px; font-weight:400; color:var(--sub); }
+  table { width:100%; border-collapse:collapse; margin-top:8px; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--line); }
+  .empty { color:var(--sub); margin:12px 0 0; }
+  #status { padding:10px 14px; border-radius:10px; background:var(--card); border:1px solid var(--line); margin-bottom:16px; font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>수요일 시험 · 도서관 대출</h1>
+  <p class="sub">대출 규칙은 모두 <code>solution.py</code>의 <code>LibraryLoan</code>이 판단합니다. 이 화면은 입력을 전달하고 결과만 보여 줍니다.
+    책 B001~B005, 날짜는 "며칠째"(1 이상 정수), 대출 기간 14일, 한 사람당 3권까지 빌릴 수 있습니다.</p>
+  <div id="status" role="status">solution.py 불러오는 중… (처음엔 몇 초 걸립니다)</div>
+
+  <section>
+    <h2>대출</h2>
+    <form id="f-borrow" class="grid">
+      <label>책 번호<input name="book" value="B001" required></label>
+      <label>이름<input name="name" placeholder="예: 김민수" required></label>
+      <label>며칠째<input name="day" inputmode="decimal" value="1" required></label>
+      <button disabled>대출하기</button>
+    </form>
+    <div id="r-borrow" class="result" aria-live="polite"></div>
+  </section>
+
+  <section>
+    <h2>반납</h2>
+    <form id="f-return" class="grid">
+      <label>책 번호<input name="book" value="B001" required></label>
+      <label>이름<input name="name" placeholder="빌린 사람" required></label>
+      <label>며칠째<input name="day" inputmode="decimal" value="10" required></label>
+      <button disabled>반납하기</button>
+    </form>
+    <div id="r-return" class="result" aria-live="polite"></div>
+  </section>
+
+  <section>
+    <h2>대출 목록</h2>
+    <form id="f-loans" class="grid">
+      <label>이름<input name="name" placeholder="예: 김민수" required></label>
+      <button disabled>목록 보기</button>
+    </form>
+    <div id="loans"></div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+(function () {
+  var lib = null, pyBorrow = null, pyReturn = null;
+  var fLoans = document.getElementById("f-loans");
+
+  // 날짜 입력을 파이썬 안에서 숫자로 바꾼 뒤 그대로 LibraryLoan 에 넘김(규칙 판단은 전부 solution.py 몫).
+  // JS 는 10.0 과 10 을 구분하지 못해 JS 에서 바꾸면 "10.0" 이 정수로 넘어가므로 변환을 파이썬에서 함
+  var GLUE = [
+    "import importlib, sys",
+    "sys.path.insert(0, '.'); importlib.invalidate_caches()",
+    "from solution import LibraryLoan",
+    "lib = LibraryLoan()",
+    "def num(s):",
+    "    s = s.strip()",
+    "    for f in (int, float):",
+    "        try:",
+    "            return f(s)",
+    "        except ValueError:",
+    "            pass",
+    "    return s",
+    "def web_borrow(book, name, d):",
+    "    return lib.borrow(book, name, num(d))",
+    "def web_return(book, name, d):",
+    "    return lib.return_book(book, name, num(d))"
+  ].join("\n");
+
+  function show(el, ok, head, detail) {
+    el.className = "result " + (ok ? "ok" : "ng");
+    el.textContent = head;
+    var small = document.createElement("small");
+    small.textContent = detail;
+    el.appendChild(small);
+  }
+
+  function renderLoans(name) {
+    fLoans.name.value = name;
+    var proxy = lib.get_loans(name);
+    var rows = proxy.toJs(); proxy.destroy();
+    var box = document.getElementById("loans");
+    box.textContent = "";
+    var cap = document.createElement("p"); cap.className = "empty";
+    cap.textContent = name + " " + (rows.length ? "대출 목록 (반납 기한 순)" : ": 빌린 책 없음");
+    box.appendChild(cap);
+    if (!rows.length) return;
+    var t = document.createElement("table");
+    var head = t.createTHead().insertRow();
+    ["책 번호", "반납 기한"].forEach(function (h) { var th = document.createElement("th"); th.textContent = h; head.appendChild(th); });
+    var tb = t.createTBody();
+    rows.forEach(function (r) {
+      var tr = tb.insertRow();
+      tr.insertCell().textContent = r[0];
+      tr.insertCell().textContent = r[1] + "일째까지";
+    });
+    box.appendChild(t);
+  }
+
+  document.getElementById("f-borrow").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = e.target, book = f.book.value.trim(), name = f.name.value.trim(), d = f.day.value.trim();
+    var ok = pyBorrow(book, name, d);
+    show(document.getElementById("r-borrow"), ok, ok ? "성공" : "실패", name + " · " + book + " · " + d + "일째 대출");
+    renderLoans(name);
+  });
+
+  document.getElementById("f-return").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = e.target, book = f.book.value.trim(), name = f.name.value.trim(), d = f.day.value.trim();
+    var late = pyReturn(book, name, d);
+    var ok = late !== -1;
+    show(document.getElementById("r-return"), ok, ok ? "성공 · 연체 " + late + "일" : "실패", name + " · " + book + " · " + d + "일째 반납");
+    renderLoans(name);
+  });
+
+  fLoans.addEventListener("submit", function (e) {
+    e.preventDefault();
+    renderLoans(fLoans.name.value.trim());
+  });
+
+  async function boot() {
+    var status = document.getElementById("status");
+    try {
+      var py = await loadPyodide();
+      // 재배포 직후에도 최신 solution.py 를 받도록 캐시를 피함
+      var res = await fetch("solution.py?v=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) throw new Error("solution.py 를 받지 못했습니다 (HTTP " + res.status + ")");
+      py.FS.writeFile("solution.py", await res.text(), { encoding: "utf8" });
+      py.runPython(GLUE);
+      lib = py.globals.get("lib");
+      pyBorrow = py.globals.get("web_borrow");
+      pyReturn = py.globals.get("web_return");
+      window.lib = lib; window.py = py; // 콘솔 확인용
+      document.querySelectorAll("button").forEach(function (b) { b.disabled = false; });
+      status.textContent = "준비 완료 · solution.py 의 LibraryLoan 으로 동작 중 (새로고침하면 대출 기록이 비워집니다)";
+    } catch (err) {
+      status.textContent = "불러오기 실패: " + err.message;
+      status.style.color = "var(--ng)";
+    }
+  }
+  boot();
+})();
+</script>
+</body>
+</html>
