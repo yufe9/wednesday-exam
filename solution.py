@@ -12,7 +12,7 @@ def _is_day(v):
 class LibraryLoan:
     def __init__(self):
         self._loans = {}      # book_id → (name, 빌린 날)
-        self._ban = {}        # name → 대출이 다시 가능한 첫 날
+        self._ban = {}        # name → [(정지 시작일, 정지가 풀리는 날), ...]
 
     def borrow(self, book_id, name, day):
         if not isinstance(name, str) or not name.strip():   # 빈 이름·공백·None 거절
@@ -28,7 +28,7 @@ class LibraryLoan:
             return False
         if any(day > d + LOAN_DAYS for d in mine):            # 5. 기한 지난 책 보유
             return False
-        if day < self._ban.get(name, 0):                      # 6. 대출 정지
+        if any(s <= day < e for s, e in self._ban.get(name, ())):   # 6. 대출 정지 (날짜 순서는 검사 안 함)
             return False
         self._loans[book_id] = (name, day)
         return True
@@ -42,8 +42,8 @@ class LibraryLoan:
         del self._loans[book_id]
         late = max(0, day - (loan[1] + LOAN_DAYS))
         if late:
-            # 반납한 날부터 late 일 동안 정지, 겹치면 더 늦게 끝나는 쪽
-            self._ban[name] = max(self._ban.get(name, 0), day + late)
+            # 반납한 날부터 late 일 동안 정지. 겹치면 합집합이라 더 늦게 끝나는 쪽을 따르고 기간을 더하지 않음
+            self._ban.setdefault(name, []).append((day, day + late))
         return late
 
     def get_loans(self, name):
