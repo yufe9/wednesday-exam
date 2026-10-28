@@ -43,12 +43,16 @@
     책 B001~B005, 날짜는 "며칠째"(1 이상 정수), 대출 기간 14일, 한 사람당 3권까지 빌릴 수 있습니다.</p>
   <div id="status" role="status">solution.py 불러오는 중… (처음엔 몇 초 걸립니다)</div>
 
+  <!-- 목록에서 고르거나 직접 입력 가능(B009, 2.5 같은 잘못된 값도 그대로 solution.py 로 전달) -->
+  <datalist id="books"><option value="B001"><option value="B002"><option value="B003"><option value="B004"><option value="B005"></datalist>
+  <datalist id="days"></datalist>
+
   <section>
     <h2>대출</h2>
     <form id="f-borrow" class="grid">
-      <label>책 번호<input name="book" value="B001" required></label>
+      <label>책 번호<input name="book" list="books" value="B001" required></label>
       <label>이름<input name="name" placeholder="예: 김민수" required></label>
-      <label>며칠째<input name="day" inputmode="decimal" value="1" required></label>
+      <label>대출일(며칠째)<input name="day" list="days" inputmode="decimal" value="1" required></label>
       <button disabled>대출하기</button>
     </form>
     <div id="r-borrow" class="result" aria-live="polite"></div>
@@ -57,9 +61,9 @@
   <section>
     <h2>반납</h2>
     <form id="f-return" class="grid">
-      <label>책 번호<input name="book" value="B001" required></label>
+      <label>책 번호<input name="book" list="books" value="B001" required></label>
       <label>이름<input name="name" placeholder="빌린 사람" required></label>
-      <label>며칠째<input name="day" inputmode="decimal" value="10" required></label>
+      <label>반납일(며칠째)<input name="day" list="days" inputmode="decimal" value="10" required></label>
       <button disabled>반납하기</button>
     </form>
     <div id="r-return" class="result" aria-live="polite"></div>
@@ -80,6 +84,9 @@
 (function () {
   var lib = null, pyBorrow = null, pyReturn = null;
   var fLoans = document.getElementById("f-loans");
+  // 날짜 목록은 고르기 편하도록 1~60 만 채움(입력 제한이 아님)
+  var dl = document.getElementById("days");
+  for (var i = 1; i <= 60; i++) { var o = document.createElement("option"); o.value = String(i); dl.appendChild(o); }
 
   // 날짜 입력을 파이썬 안에서 숫자로 바꾼 뒤 그대로 LibraryLoan 에 넘김(규칙 판단은 전부 solution.py 몫).
   // JS 는 10.0 과 10 을 구분하지 못해 JS 에서 바꾸면 "10.0" 이 정수로 넘어가므로 변환을 파이썬에서 함
@@ -136,7 +143,7 @@
     e.preventDefault();
     var f = e.target, book = f.book.value.trim(), name = f.name.value.trim(), d = f.day.value.trim();
     var ok = pyBorrow(book, name, d);
-    show(document.getElementById("r-borrow"), ok, ok ? "성공" : "실패", name + " · " + book + " · " + d + "일째 대출");
+    show(document.getElementById("r-borrow"), ok, ok ? "성공" : "실패", name + " · " + book + " · 대출일 " + d + "일째");
     renderLoans(name);
   });
 
@@ -145,7 +152,7 @@
     var f = e.target, book = f.book.value.trim(), name = f.name.value.trim(), d = f.day.value.trim();
     var late = pyReturn(book, name, d);
     var ok = late !== -1;
-    show(document.getElementById("r-return"), ok, ok ? "성공 · 연체 " + late + "일" : "실패", name + " · " + book + " · " + d + "일째 반납");
+    show(document.getElementById("r-return"), ok, ok ? "성공 · 연체 " + late + "일" : "실패", name + " · " + book + " · 반납일 " + d + "일째");
     renderLoans(name);
   });
 
